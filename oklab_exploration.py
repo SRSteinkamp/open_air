@@ -39,27 +39,18 @@ feed_idx = 2
 sel_feed = feeds[feed_idx]
 single_feed = df_joined.query('feed == @sel_feed')
 
-# %%
 
-# Interesting features for a first look:
-# r2, temp, hum
-# implement an automatic check for usability of r1
-
-# Idea 1 implement multiple temporal filters. For hum, r2, and temp.
-# Weighted average of filters.
-# Needed to do: Create a test set. Better ways to aggregate the data. It's a bit complicated.
 filter_dictionary = dict()
 
-train = np.arange(106)[:80]
-test = np.arange(106)[80:]
+features = ['r2', 'hum', 'temp']
+single_feed_aug = polair.create_lags(single_feed, features)
 
 for targ in ['CHOR', 'RODE', 'VKCL', 'VKTU']:
-    predicted = -------------------- >> begin captured logging << --------------------
+    predicted = []
 
-    x_feat = []-------------------- >> begin captured logging << --------------------
+    x_feat = []
 
     for feat in ['r2', 'hum', 'temp']:
-        x_agg, x, y, y_idx = polair.aggregate_data(single_feed, feat, targ, 2)
 
         temp_filter, temp_intercept, _ = polair.fit_temporal_filter(
             RidgeCV(), x_agg[train], y[targ].values[train])
