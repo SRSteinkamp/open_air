@@ -1,0 +1,7 @@
+*.ipynb
+data/
+.vscode/
+.ipynb_checkpoints/
+__pycache__
+.noseids
+**/__pycache__
