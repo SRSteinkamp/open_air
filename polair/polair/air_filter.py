@@ -14,7 +14,8 @@ def create_lags(feed: pd.DataFrame, features: list, lags):
     for feat in features:
         for lg in range(1, lags + 1):
             feed_out[f"{feat}_lg{lg}"] = 0
-            feed_out.loc[lg:, f"{feat}_lg{lg}"] = feed_out.loc[:-lg, feat]
+            feed_out.iloc[lg:, feed_out.columns.get_loc(
+                f"{feat}_lg{lg}")] = feed_out[feat][:-lg].values
 
     return feed_out
 

@@ -47,6 +47,24 @@ def test_create_lags_element_2_lags():
         lag_data.columns) and 'x_lg2' in list(lag_data.columns)
 
 
+def test_create_lags_data_move_0():
+    test_data = create_feed()
+    features = ['x']
+    lags = 1
+    lag_data = polair.create_lags(test_data, features, lags)
+
+    assert lag_data['x'][0] == lag_data['x_lg1'][1]
+
+
+def test_create_lags_data_move_10():
+    test_data = create_feed()
+    features = ['x']
+    lags = 1
+    lag_data = polair.create_lags(test_data, features, lags)
+
+    assert lag_data['x'][10] == lag_data['x_lg1'][11]
+
+
 @raises(AttributeError)
 def test_temporal_filter_coef():
     test_data = create_feed()
