@@ -1,7 +1,8 @@
 *.ipynb
-data/
 .vscode/
+.mypy_cache/
 .ipynb_checkpoints/
 __pycache__
 .noseids
 **/__pycache__
+data_base_info.csv

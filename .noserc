@@ -1,0 +1,3 @@
+[nosetets]
+verbosity=1
+with-doctest=1
