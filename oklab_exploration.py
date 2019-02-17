@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import RidgeCV, BayesianRidge
 from sklearn.metrics import r2_score
 from scipy.signal import convolve
 from polair import polair
@@ -17,7 +17,6 @@ df_lanuv = pd.read_csv(
 df_openair = pd.read_csv(
     f'{DATA_PATH}{date}_df_openair.csv', index_col='timestamp')
 
-# %%
 # Collapse data, so that we can access the different stations
 # directly for each timestamp
 df_lanuv = df_lanuv.pivot(columns='station')['no2']
@@ -35,48 +34,56 @@ feeds = np.unique(df_joined['feed'])
 
 
 # %
-feed_idx = 2
-sel_feed = feeds[feed_idx]
-single_feed = df_joined.query('feed == @sel_feed')
+filter_dictionary = {'target': [], 'feed': [], 'feature': [],
+                     'fw1': [], 'fw2': [], 'fw3': [], 'score': []}
 
-# %%
+for feed_idx in range(len(feeds)):
+    sel_feed = feeds[feed_idx]
+    single_feed = df_joined.query('feed == @sel_feed').copy()
+    single_feed = single_feed.reset_index()
+    lags = 2
 
-# Interesting features for a first look:
-# r2, temp, hum
-# implement an automatic check for usability of r1
+    features = ['r2', 'hum', 'temp']
+    single_feed_aug = polair.create_lags(single_feed, features, lags)
 
-# Idea 1 implement multiple temporal filters. For hum, r2, and temp.
-# Weighted average of filters.
-# Needed to do: Create a test set. Better ways to aggregate the data. It's a bit complicated.
-filter_dictionary = dict()
+    for targ in ['CHOR', 'RODE', 'VKCL', 'VKTU']:
+        predicted = []
 
-train = np.arange(106)[:80]
-test = np.arange(106)[80:]
+        # Train and test set:
+        y_glob, idx = polair.remove_nans(single_feed_aug, targ)
 
-for targ in ['CHOR', 'RODE', 'VKCL', 'VKTU']:
-    predicted = -------------------- >> begin captured logging << --------------------
+        train = idx[: np.int(len(idx) * 0.8)]
+        test = idx[np.int(len(idx) * 0.8):]
+        train_idx = np.arange(train.shape[0])
+        test_idx = np.arange(train.shape[0], train.shape[0] + test.shape[0])
+        for feat in ['r2', 'hum', 'temp']:
 
-    x_feat = []-------------------- >> begin captured logging << --------------------
+            uni_features = [
+                f'{feat}_lg{ii}' for ii in reversed(range(1, lags + 1))]
+            uni_features.append(feat)
+            x, y = polair.create_x_y(single_feed_aug, targ, uni_features)
 
-    for feat in ['r2', 'hum', 'temp']:
-        x_agg, x, y, y_idx = polair.aggregate_data(single_feed, feat, targ, 2)
+            temp_filter, temp_intercept, _ = polair.fit_temporal_filter(
+                BayesianRidge(fit_intercept=False), x[train_idx], y.values[train_idx])
 
-        temp_filter, temp_intercept, _ = polair.fit_temporal_filter(
-            RidgeCV(), x_agg[train], y[targ].values[train])
+            temp = np.convolve(single_feed[feat].values, temp_filter[::-1],
+                               mode='same') + temp_intercept
+            temp[np.isnan(temp)] = 0
+            sc = r2_score(y.values[test_idx], temp[test])
+            print(sc)
+            filter_dictionary['feature'].append(feat)
+            filter_dictionary['feed'].append(sel_feed)
+            filter_dictionary['target'].append(targ)
+            filter_dictionary['fw1'].append(temp_filter[0])
+            filter_dictionary['fw2'].append(temp_filter[1])
+            filter_dictionary['fw3'].append(temp_filter[2])
+            filter_dictionary['score'].append(sc)
+            predicted.append(temp)
 
-        temp = np.convolve(x[feat].values, temp_filter,
-                           mode='same') + temp_intercept
-        print(r2_score(y[targ].values[test], temp[y_idx][test]))
-        filter_dictionary[feat, targ] = (temp_filter, temp_intercept)
-        predicted.append(temp[y_idx])
-        x_feat.append(x[feat].values)
-
-    predicted = np.stack(predicted).T
-    x_feat = np.stack(x_feat).T
-    # %%
-    combiner = RidgeCV(fit_intercept=False)
-    combiner.fit(predicted[train], y[targ].values[train])
-
-    combined_features = np.sum(predicted[test] * combiner.coef_, 1)
-    print(r2_score(y[targ].values[test], combined_features))
+        predicted = np.stack(predicted).T
+        combiner = BayesianRidge(fit_intercept=False)
+        combiner.fit(predicted[train], y_glob[train])
+        combined_features = np.sum(predicted[test] * combiner.coef_, 1)
+        print(r2_score(y[test], combined_features))
 # %% Combine filter:
+pd.DataFrame.from_dict(filter_dictionary).to_csv(f'{date}_filter_weights.csv')
