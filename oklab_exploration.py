@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import RidgeCV, BayesianRidge
 from sklearn.metrics import r2_score
 from scipy.signal import convolve
 from polair import polair
@@ -34,7 +34,7 @@ feeds = np.unique(df_joined['feed'])
 
 
 # %
-feed_idx = 0
+feed_idx = 1
 sel_feed = feeds[feed_idx]
 single_feed = df_joined.query('feed == @sel_feed').copy()
 single_feed = single_feed.reset_index()
@@ -46,7 +46,7 @@ filter_dictionary = dict()
 features = ['r2', 'hum', 'temp']
 single_feed_aug = polair.create_lags(single_feed, features, lags)
 
-for targ in ['CHOR']:  # , 'RODE', 'VKCL', 'VKTU']:
+for targ in ['CHOR', 'RODE', 'VKCL', 'VKTU']:
     predicted = []
 
     # Train and test set:
@@ -64,7 +64,7 @@ for targ in ['CHOR']:  # , 'RODE', 'VKCL', 'VKTU']:
         x, y = polair.create_x_y(single_feed_aug, targ, uni_features)
 
         temp_filter, temp_intercept, _ = polair.fit_temporal_filter(
-            RidgeCV(), x[train_idx], y.values[train_idx])
+            BayesianRidge(), x[train_idx], y.values[train_idx])
 
         temp = np.convolve(single_feed[feat].values, temp_filter[::-1],
                            mode='same') + temp_intercept
@@ -74,7 +74,7 @@ for targ in ['CHOR']:  # , 'RODE', 'VKCL', 'VKTU']:
         predicted.append(temp)
 
     predicted = np.stack(predicted).T
-    combiner = RidgeCV(fit_intercept=False)
+    combiner = BayesianRidge(fit_intercept=False)
     combiner.fit(predicted[train], y_glob[train])
     combined_features = np.sum(predicted[test] * combiner.coef_, 1)
     print(r2_score(y[test], combined_features))

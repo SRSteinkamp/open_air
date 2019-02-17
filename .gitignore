@@ -6,3 +6,4 @@ __pycache__
 .noseids
 **/__pycache__
 data_base_info.csv
+nosetests.xml
