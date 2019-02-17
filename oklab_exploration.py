@@ -34,48 +34,56 @@ feeds = np.unique(df_joined['feed'])
 
 
 # %
-feed_idx = 1
-sel_feed = feeds[feed_idx]
-single_feed = df_joined.query('feed == @sel_feed').copy()
-single_feed = single_feed.reset_index()
-lags = 2
+filter_dictionary = {'target': [], 'feed': [], 'feature': [],
+                     'fw1': [], 'fw2': [], 'fw3': [], 'score': []}
 
+for feed_idx in range(len(feeds)):
+    sel_feed = feeds[feed_idx]
+    single_feed = df_joined.query('feed == @sel_feed').copy()
+    single_feed = single_feed.reset_index()
+    lags = 2
 
-filter_dictionary = dict()
+    features = ['r2', 'hum', 'temp']
+    single_feed_aug = polair.create_lags(single_feed, features, lags)
 
-features = ['r2', 'hum', 'temp']
-single_feed_aug = polair.create_lags(single_feed, features, lags)
+    for targ in ['CHOR', 'RODE', 'VKCL', 'VKTU']:
+        predicted = []
 
-for targ in ['CHOR', 'RODE', 'VKCL', 'VKTU']:
-    predicted = []
+        # Train and test set:
+        y_glob, idx = polair.remove_nans(single_feed_aug, targ)
 
-    # Train and test set:
-    y_glob, idx = polair.remove_nans(single_feed_aug, targ)
+        train = idx[: np.int(len(idx) * 0.8)]
+        test = idx[np.int(len(idx) * 0.8):]
+        train_idx = np.arange(train.shape[0])
+        test_idx = np.arange(train.shape[0], train.shape[0] + test.shape[0])
+        for feat in ['r2', 'hum', 'temp']:
 
-    train = idx[: np.int(len(idx) * 0.8)]
-    test = idx[np.int(len(idx) * 0.8):]
-    train_idx = np.arange(train.shape[0])
-    test_idx = np.arange(train.shape[0], train.shape[0] + test.shape[0])
-    for feat in ['r2', 'hum', 'temp']:
+            uni_features = [
+                f'{feat}_lg{ii}' for ii in reversed(range(1, lags + 1))]
+            uni_features.append(feat)
+            x, y = polair.create_x_y(single_feed_aug, targ, uni_features)
 
-        uni_features = [
-            f'{feat}_lg{ii}' for ii in reversed(range(1, lags + 1))]
-        uni_features.append(feat)
-        x, y = polair.create_x_y(single_feed_aug, targ, uni_features)
+            temp_filter, temp_intercept, _ = polair.fit_temporal_filter(
+                BayesianRidge(fit_intercept=False), x[train_idx], y.values[train_idx])
 
-        temp_filter, temp_intercept, _ = polair.fit_temporal_filter(
-            BayesianRidge(), x[train_idx], y.values[train_idx])
+            temp = np.convolve(single_feed[feat].values, temp_filter[::-1],
+                               mode='same') + temp_intercept
+            temp[np.isnan(temp)] = 0
+            sc = r2_score(y.values[test_idx], temp[test])
+            print(sc)
+            filter_dictionary['feature'].append(feat)
+            filter_dictionary['feed'].append(sel_feed)
+            filter_dictionary['target'].append(targ)
+            filter_dictionary['fw1'].append(temp_filter[0])
+            filter_dictionary['fw2'].append(temp_filter[1])
+            filter_dictionary['fw3'].append(temp_filter[2])
+            filter_dictionary['score'].append(sc)
+            predicted.append(temp)
 
-        temp = np.convolve(single_feed[feat].values, temp_filter[::-1],
-                           mode='same') + temp_intercept
-        temp[np.isnan(temp)] = 0
-        print(r2_score(y.values[test_idx], temp[test]))
-        filter_dictionary[feat, targ] = (temp_filter, temp_intercept)
-        predicted.append(temp)
-
-    predicted = np.stack(predicted).T
-    combiner = BayesianRidge(fit_intercept=False)
-    combiner.fit(predicted[train], y_glob[train])
-    combined_features = np.sum(predicted[test] * combiner.coef_, 1)
-    print(r2_score(y[test], combined_features))
+        predicted = np.stack(predicted).T
+        combiner = BayesianRidge(fit_intercept=False)
+        combiner.fit(predicted[train], y_glob[train])
+        combined_features = np.sum(predicted[test] * combiner.coef_, 1)
+        print(r2_score(y[test], combined_features))
 # %% Combine filter:
+pd.DataFrame.from_dict(filter_dictionary).to_csv(f'{date}_filter_weights.csv')
